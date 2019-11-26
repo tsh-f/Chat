@@ -1,24 +1,26 @@
 package Chat;
 
+import java.awt.event.ActionListener;
 import java.io.*;
 import java.net.Socket;
 
 public class Client implements Runnable {
-    private String name;
+    private UIChat ui;
 
-    public static void main(String[] args){
+    public static void main(String[] args) {
         new Thread(new Client()).start();
     }
 
 
     @Override
     public void run() {
-        UIChat ui = new UIChat();
+        ui = new UIChat();
+
 
         ui.submit.addActionListener(e -> {
-                synchronized (this){
-                    notify();
-                }
+            synchronized (this) {
+                notify();
+            }
         });
 
         ui.text.setText("Введите адрес сервера:  ");
@@ -31,57 +33,45 @@ public class Client implements Runnable {
                 wait();
                 int port = Integer.parseInt(ui.message.getText());
                 ui.message.setText("");
+                for (ActionListener e : ui.submit.getActionListeners()) {
+                    ui.submit.removeActionListener(e);
+                }
 
                 try (Socket socket = new Socket(host, port);
                      BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
                      BufferedWriter out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream()))) {
-                    Thread rm = new Thread() {
-                        String tmp;
-
-                        @Override
-                        public void run() {
-                            try {
-                                while (true) {
-                                    tmp = in.readLine();
-                                    ui.text.append(tmp + "\n");
-                                }
-                            } catch (IOException e) {
-                                ui.text.append("\nСоединение потеряно\n");
+                    Thread rm = new Thread(() -> {
+                        try {
+                            while (true) {
+                                ui.text.append(in.readLine() + "\n");
                             }
+                        } catch (IOException e) {
+                            ui.text.append("\nСоединение потеряно\n");
                         }
-                    };
+                    });
 
                     Thread sm = new Thread() {
-                        Object lock = this;
-                        String tmp;
-
                         @Override
                         public void run() {
 
                             ui.submit.addActionListener(e -> {
-                                synchronized (lock){
-                                    notify();
+                                synchronized (this) {
+                                    notifyAll();
                                 }
                             });
 
                             try {
-                                synchronized (lock) {
+                                synchronized (this) {
                                     ui.text.setText("Введите имя: ");
                                     wait();
-                                    name = ui.message.getText();
+                                    out.write(ui.message.getText() + "\n");
                                     ui.text.setText("");
                                     ui.message.setText("");
-                                    out.write(name + "\n");
                                     while (true) {
                                         wait();
-                                        tmp = ui.message.getText();
-                                        ui.message.setText("");
-                                        if (tmp.equals("стоп")) {
-                                            out.write("стоп\n");
-                                            break;
-                                        }
-                                        out.write(tmp + "\n");
+                                        out.write(ui.message.getText() + "\n");
                                         out.flush();
+                                        ui.message.setText("");
                                     }
                                 }
                             } catch (InterruptedException | IOException e) {
